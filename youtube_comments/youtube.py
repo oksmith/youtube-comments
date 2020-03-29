@@ -42,9 +42,9 @@ API_SERVICE_NAME = 'youtube'
 
 API_VERSION = 'v3'
 
-# TODO: handle this secrets file better. Command line argument? Or prompt the user if the key file doesn't exist already?
-SECRETS_FILENAME = 'client_secret_1049876915637-7ia95c7rg5teak6crcuodies22keluuh.apps.googleusercontent.com.json'
-CLIENT_SECRETS_FILE = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..', SECRETS_FILENAME))
+# TODO: handle this secrets file better. Command line argument? Or prompt the user if the key file doesn't exist?
+# SECRETS_FILENAME = 'client_secret_1049876915637-7ia95c7rg5teak6crcuodies22keluuh.apps.googleusercontent.com.json'
+# CLIENT_SECRETS_FILE = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..', SECRETS_FILENAME))
 
 
 
@@ -57,11 +57,13 @@ CLIENT_SECRETS_FILE = os.path.abspath(os.path.join(os.path.dirname( __file__ ), 
 def parse_args():
 
     parser = argparse.ArgumentParser()
+    
+    parser.add_argument('--key_file', type=str)
 
     parser.add_argument('--url', type=str, default='https://www.youtube.com/watch?v=dQw4w9WgXcQ')
 
     parser.add_argument(
-        '--data_path', 
+        '--data-path', 
         type=str, 
         default=os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..'))
     )
@@ -82,7 +84,7 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 
-def get_authenticated_service():
+def get_authenticated_service(key_file):
     credentials = None
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
@@ -94,7 +96,7 @@ def get_authenticated_service():
             credentials.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                CLIENT_SECRETS_FILE, SCOPES
+                key_file, SCOPES
             )
             credentials = flow.run_console()
  
@@ -166,13 +168,15 @@ def summarise_comments_data(comments_data):
 
 
 if __name__ == '__main__':
+    args = parse_args()
+    key_file = args['key_file']
+    
     # To run locally (not in a production environment), we
     # disable OAuthlib's HTTPs verification.
     os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-    service = get_authenticated_service()
+    service = get_authenticated_service(key_file)
     
-    args = parse_args()
-    
+    # Fetch comments
     youtube_comments = get_video_comments_from_url(args['url'], service)
     comments_data = pd.DataFrame({
         'comment': youtube_comments
@@ -182,22 +186,20 @@ if __name__ == '__main__':
     if len(youtube_comments) == 0:
         raise ValueError(f'The video {video_id} currently has no comments!')
     
+    # Load model
     with open(MODELS_DICT_LOCATION, 'rb') as f:
         models_dict = pickle.load(f)
-        
-    word_vectorizer = models_dict['word_vectorizer']
-    char_vectorizer = models_dict['char_vectorizer']
-    models = models_dict['models']
     
+    # Classify comments
     comments_data = classify_comments(
         comments_data['comment'], 
-        word_vectorizer, 
-        char_vectorizer, 
-        models
+        models_dict['word_vectorizer'], 
+        models_dict['char_vectorizer'], 
+        models_dict['models']
     )
     
+    # Summarise findings
     summary = summarise_comments_data(comments_data)
-    
     print(summary)
     
     summary.to_csv(f'{args["data_path"]}/{video_id}.csv', header=True)
